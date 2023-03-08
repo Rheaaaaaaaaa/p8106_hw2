@@ -1,0 +1,57 @@
+---
+title: "ds2 hw2"
+author: "Ruihan Zhang"
+date: "2023-03-08"
+output: github_document
+---
+
+```{r}
+library(caret)
+library(glmnet)
+library(mlbench)
+library(splines)
+library(mgcv)
+library(pROC)
+library(earth)
+library(tidyverse)
+library(ggplot2)
+library(pdp)
+library(vip)
+library(AppliedPredictiveModeling)
+```
+```{r}
+college_data = read_csv("./College.csv") %>% 
+  janitor::clean_names() %>% 
+  na.omit()
+```
+```{r}
+set.seed(2023)
+train_index=createDataPartition(y=college_data$outstate, p=0.8, list = FALSE)
+college_train=college_data[train_index,]
+college_test=college_data[-train_index,]
+```
+
+```{r}
+#1.
+fit.ss=smooth.spline(college_data$perc_alumni,college_data$outstate)
+fit.ss$df
+fit.ss$lambda
+```
+```{r}
+perc_alumni.grid = seq(from=-8, to = 74, by=1)
+pred.ss=predict(fit.ss,x=perc_alumni.grid)
+pred.ss.df=data_frame(pred=pred.ss$y,perc_alumni=perc_alumni.grid)
+p=ggplot(data=college_data,aes(x=perc_alumni, y=outstate))+geom_point(color=rgb(0.2, 0.4, 0.2, 0.5))
+p+geom_line(aes(x=perc_alumni, y=pred),data=pred.ss.df,color=rgb(0.8,0.1,0.1,1))+theme_bw()
+```
+```{r}
+#2.
+x <- college_train %>% select(-outstate)
+y <- college_train$outstate
+set.seed(2023)
+ctrl1=trainControl(method = "cv", number = 10)
+gam.fit=train(x, y, method = "gam",tuneGrid = data.frame(method = "GCV.Cp",
+                                       select = TRUE), trControl = ctrl1)
+gam.fit$bestTune
+```
+
