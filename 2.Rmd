@@ -1,0 +1,102 @@
+---
+title: "bm practice2"
+author: "Ruihan Zhang"
+date: "2023-03-08"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(caret)
+library(mgcv)
+library(earth)
+```
+
+```{r}
+college_data = read_csv("D:/lenovo/Documents/College.csv", show_col_types = FALSE) %>% 
+  janitor::clean_names() %>% 
+  na.omit()
+```
+
+```{r}
+set.seed(2023)
+college_mtx <- model.matrix(outstate ~.,college_data)[,-1]
+trainRows <- createDataPartition(y = college_data$outstate, p = 0.8, list = FALSE)
+# design matrix
+train_data <- college_data[trainRows,]
+test_data <- college_data[-trainRows,]
+x <- train_data %>% dplyr::select(-outstate)
+y <- train_data$outstate
+```
+
+## a)
+
+```{r}
+perc.grid <- seq(from = 0, to = 70, by = 1)
+fit.ss <- smooth.spline(train_data$perc_alumni, train_data$outstate)
+ss.df <- fit.ss$df
+ss.df
+pred.ss <- predict(fit.ss,
+                   x = perc.grid)
+pred.ss.df <- data.frame(pred = pred.ss$y,
+                         perc = perc.grid)
+p <- ggplot(data = train_data, aes(x = perc_alumni, y = outstate)) +
+     geom_point(color = rgb(.2, .4, .2, .5))
+p + geom_line(aes(x = perc, y = pred), data = pred.ss.df,
+          color = rgb(.8, .1, .1, 1)) + theme_bw()
+```
+
+The degree of freedom obtained by generalized cross-validation is `r ss.df`. The fitted spline curve performs a straight line as shown.
+
+```{r}
+perc.grid <- seq(from = 0, to = 70, by = 1)
+ps <- list()
+for (i in 1:63){
+    fit_ <- smooth.spline(train_data$perc_alumni, train_data$outstate, df = i+1 )
+    df_ <- fit_$df
+    if(df_< i){
+        next
+    }
+    pred_<- predict(fit_,
+                   x = perc.grid)
+    preddf_ <- data.frame(pred = pred_$y,
+                         perc = perc.grid,
+                         df = rep(i+1, length(pred_$y)))
+    ps <- rbind(ps, preddf_)
+}
+p.mass <- ggplot(data = train_data, aes(x = perc_alumni, y = outstate)) +
+    geom_point(color = rgb(.2, .4, .2, .5))
+p.mass + geom_line(aes(x = perc, y = pred, group = df, color = df), data = ps[which(ps$df <= 15),]) + theme_bw()
+```
+
+The plot above shows the fitted smoothing spline models using perc.alumni as the only predictor of `Outstate` for a range of degree of freedom from 2 to 15. As the `df` increase, the fitted spline curve become more and more wiggly.
+## b)
+
+```{r }
+gam.m1 <- gam(outstate~ s(apps) + s(accept) + s(enroll)+ s(top10perc)+s(top25perc)+s(f_undergrad)+s(p_undergrad)+s(room_board)+s(books)+s(personal)+s(ph_d)+s(terminal)+s(s_f_ratio)+s(perc_alumni)+s(expend)+s(grad_rate) , data = train_data)
+summary(gam.m1)
+```
+
+The GAM model included all the predictors. The model summary shows that some `edf` equals to `1`, which means these predictors may have linear relationships with `outstate`.
+
+```{r problem_c_plot}
+plot.gam(gam.m1, pages = 4)
+```
+From the plot we can also see some linear trend in `apps`, `enroll`, `p_undergrad`, `personal` and `terminal`.
+
+```{r }
+gam.test.predict <- predict.gam(gam.m1, newdata = test_data, type = "response")
+gam.test.mse <- (RMSE(gam.test.predict, test_data$outstate))^2
+```
+The test MSE of the GAM model is `r gam.test.mse`.
+## c)
+
+Train the MARS model using all predictors.
+```{r,warning=FALSE}
+ctrl1 = trainControl(method = "cv", number = 10)
+mars_grid <- expand.grid(degree = 1:3, nprune = 2:15)
+set.seed(2023)
+mars.fit <- train(train_data %>% dplyr::select(-outstate), train_data$outstate, method = "earth", tuneGrid = mars_grid, trControl = ctrl1)
+```

@@ -2,7 +2,7 @@
 title: "ds2 hw2"
 author: "Ruihan Zhang"
 date: "2023-03-08"
-output: github_document
+output: pdf_document
 ---
 
 ```{r}
@@ -35,38 +35,77 @@ y = college_train$outstate
 
 ```{r}
 #1.
-fit.ss=smooth.spline(college_train$perc_alumni,college_train$outstate)
+fit.ss1=smooth.spline(college_train$perc_alumni,college_train$outstate,lambda=0.03,cv=FALSE)
+fit.ss1$df
 
 ```
 ```{r}
 perc_alumni.grid = seq(from=min(unique(college_train$perc_alumni))-10, to = max(unique(college_train$perc_alumni))+10, by=1)
-pred.ss=predict(fit.ss,x=perc_alumni.grid)
-pred.ss.df=data_frame(pred=pred.ss$y,perc_alumni=perc_alumni.grid)
-p=ggplot(data=college_data,aes(x=perc_alumni, y=outstate))+geom_point(color=rgb(0.2, 0.4, 0.2, 0.5))
-p+geom_line(aes(x=perc_alumni.grid, y=pred),data=pred.ss.df,color=rgb(0.8,0.1,0.1,1))+theme_bw()
+pred.ss1=predict(fit.ss1,x=perc_alumni.grid)
+pred.ss.df1=data_frame(pred=pred.ss1$y,perc_alumni=perc_alumni.grid)
+p1=ggplot(data=college_train,aes(x=perc_alumni, y=outstate))+geom_point(color=rgb(0.2, 0.4, 0.2, 0.5))
+p1+geom_line(aes(x=perc_alumni.grid, y=pred),data=pred.ss.df1,color=rgb(0.8,0.1,0.1,1))+theme_bw()
+#When lambda is 0.03, the degree of freedom of the above smoothing spline model is 4.581636.
+```
+```{r}
+fit.ss2=smooth.spline(college_train$perc_alumni,college_train$outstate,cv=TRUE)
+fit.ss2$df
+fit.ss2$lambda
+pred.ss2=predict(fit.ss2,x=perc_alumni.grid)
+pred.ss.df2=data_frame(pred=pred.ss2$y,perc_alumni=perc_alumni.grid)
+p2=ggplot(data=college_train,aes(x=perc_alumni, y=outstate))+geom_point(color=rgb(0.2, 0.4, 0.2, 0.5))
+p2+geom_line(aes(x=perc_alumni.grid, y=pred),data=pred.ss.df2,color=rgb(0.8,0.1,0.1,1))+theme_bw()
+#By using cross-validation, the lambda is 2310.394, the degree of freedom of the above smoothing spline
+#model is 2.00025.
+
 ```
 
+
 ```{r}
+#2.
 gam.m=gam(outstate ~ apps+accept+enroll+s(top10perc)+top25perc+s(f_undergrad)+p_undergrad+s(room_board)+s(books)+personal+s(ph_d)+terminal+s(s_f_ratio)+perc_alumni+s(expend)+s(grad_rate), data = college_train)
 plot(gam.m)
 summary(gam.m)
 gam.m$df.residual
 rmse=sqrt(mean(residuals.gam(gam.m,type = "response")**2))
 rmse
+#The degree of freedom is 411.9762. The deviance explained is 81.4%. 
+#The adjusted R-square is 0.796. The RMSE is 1597.657. 
 gam.pre=predict(gam.m, newdata = college_data[-train_index,])
 tmse=mean((college_data[-train_index,]$outstate-gam.pre)**2)
 tmse
+#The test error MSE is 1930765. 
 ```
+
+
 ```{r}
+#3.
 ctrl1=trainControl(method = "cv", number = 10)
-mars_grid=expand.grid(degree=1:3,nprune=2:15)
+mars_grid=expand.grid(degree=1:3,nprune=6:20)
 set.seed(2023)
 mars.fit=train(x,y,method = "earth", tuneGrid = mars_grid,trControl = ctrl1)
 ggplot(mars.fit)
 mars.fit$bestTune
+#The best fitted model has 15 retained terms and 1 degree of interaction.
 coef(mars.fit$finalModel)
 mars_pre=predict(mars.fit,newdata = college_data[-train_index,])
+pdp::partial(mars.fit,pred.var=c("ph_d"),grid.resolution=10) %>% autoplot()
 t_mse=mean((college_data[-train_index,]$outstate-mars_pre)**2)
 t_mse
+#The test error MSE is 1873834.
+```
+```{r}
+#4.
+set.seed(2023)
+lm = train(x, y,
+                  method = "lm",
+                  trControl = ctrl1)
+resamp = resamples(list(MARS = mars.fit,
+                         LM = lm))
+summary(resamp)
+bwplot(resamp, metric = "RMSE")
+#As the plot shows, the MARS model has the smaller MSE, so we prefer the MARS model when predicting 
+#the out-of-state tuition. For general applications, MARS is a better approach compared to a linear
+#model, because it has a smaller RMSE.
 ```
 
